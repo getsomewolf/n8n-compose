@@ -8,9 +8,9 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # Use conditional redirection based on domain
       - "--entrypoints.websecure.address=:443"
+      # Only configure ACME/TLS for non-local domains
       - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
       - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
       - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
@@ -29,14 +29,18 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
-      - traefik.http.routers.n8n.tls=true
-      - traefik.http.routers.n8n.entrypoints=web,websecure
+      # Local domain configuration (for .localhost, .local, etc.)
+      - traefik.http.routers.n8n-local.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`) && PathPrefix(`/`)
+      - traefik.http.routers.n8n-local.entrypoints=web
+      # Production domain configuration
+      - traefik.http.routers.n8n.tls=${ENABLE_TLS:-false}
+      - traefik.http.routers.n8n.entrypoints=websecure
       - traefik.http.routers.n8n.tls.certresolver=mytlschallenge
-      - traefik.http.middlewares.n8n.headers.SSLRedirect=true
+      - traefik.http.middlewares.n8n.headers.SSLRedirect=${ENABLE_TLS:-false}
       - traefik.http.middlewares.n8n.headers.STSSeconds=315360000
       - traefik.http.middlewares.n8n.headers.browserXSSFilter=true
       - traefik.http.middlewares.n8n.headers.contentTypeNosniff=true
-      - traefik.http.middlewares.n8n.headers.forceSTSHeader=true
+      - traefik.http.middlewares.n8n.headers.forceSTSHeader=${ENABLE_TLS:-false}
       - traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}
       - traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true
       - traefik.http.middlewares.n8n.headers.STSPreload=true
@@ -45,11 +49,12 @@ services:
     environment:
       - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
       - N8N_PORT=5678
-      - N8N_PROTOCOL=https
+      - N8N_PROTOCOL=${PROTOCOL:-http}
       - NODE_ENV=production
-      - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
+      - WEBHOOK_URL=${PROTOCOL:-http}://${SUBDOMAIN}.${DOMAIN_NAME}/
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_SECURE_COOKIE=false
     volumes:
       - n8n_data:/home/node/.n8n
       - ./local-files:/files
